@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: passly-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-passly_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-passly_password}
+      POSTGRES_DB: ${POSTGRES_DB:-passly_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U passly_user -d passly_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: passly-backend
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://passly_user:passly_password@db:5432/passly_db}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      INITIAL_USERNAME: ${INITIAL_USERNAME}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    container_name: passly-frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000/api
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
